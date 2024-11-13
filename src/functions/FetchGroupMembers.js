@@ -30,28 +30,33 @@ const firestore = new Firestore({
     }
   });
 
-app.http('FetchGroupMembers', {
+  app.http('FetchGroupMembers', {
     methods: ['POST'],
     authLevel: 'function',
     handler: async (request, context) => {
         try {
             const { groupId } = await request.json();
+            context.log("Received groupId:", groupId);
+
             if (!groupId) {
-                return { status: 400, body: 'Missing groupId' };
+                context.log("Error: Missing groupId");
+                return { status: 400, body: JSON.stringify({ message: 'Missing groupId' }) };
             }
 
-            // Fetch group document
             const groupDoc = await firestore.collection('groups').doc(groupId).get();
             if (!groupDoc.exists) {
-                return { status: 404, body: 'Group not found' };
+                context.log("Group not found for groupId:", groupId);
+                return { status: 404, body: JSON.stringify({ message: 'Group not found' }) };
             }
 
             const memberIds = groupDoc.data().memberIds || [];
+            context.log("Fetched member IDs:", memberIds);
+
             if (memberIds.length === 0) {
-                return { status: 200, body: [] }; // No members
+                context.log("Returning empty members array");
+                return { status: 200, body: JSON.stringify({ members: [] }) }; // Wrap in JSON object
             }
 
-            // Fetch member details
             const memberPromises = memberIds.map(id => firestore.collection('users').doc(id).get());
             const memberDocs = await Promise.all(memberPromises);
 
@@ -59,11 +64,12 @@ app.http('FetchGroupMembers', {
                 id: doc.id,
                 ...doc.data()
             }));
+            context.log("Returning members:", JSON.stringify({ members })); // Log the members JSON
 
-            return { status: 200, body: members };
+            return { status: 200, body: JSON.stringify({ members }) };
         } catch (error) {
             context.log('Error fetching members:', error);
-            return { status: 500, body: `Error: ${error.message}` };
+            return { status: 500, body: JSON.stringify({ message: `Error: ${error.message}` }) };
         }
     }
 });

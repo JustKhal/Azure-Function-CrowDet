@@ -39,23 +39,36 @@ async function SendFCMNotification(registrationToken, notification, dataPayload)
 
     // Get the access token
     const accessToken = await getAccessToken();
+    console.log("FCM URL:", fcmUrl); // Log the FCM URL
+    console.log("Registration Token:", registrationToken); // Log the registration token
+    console.log("Access Token:", accessToken); // Log the access token
+    console.log("Payload:", JSON.stringify(payload)); // Log the full payload
 
     // Send the notification request to FCM using the dynamically imported `fetch`
-    const response = await fetchWithDynamicImport(fcmUrl, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    });
+    try {
+        const response = await fetchWithDynamicImport(fcmUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Failed to send FCM notification: ${errorData.error.message}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Failed to send FCM notification:", errorData);
+            throw new Error(`Failed to send FCM notification: ${errorData.error.message}`);
+        }
+
+        const responseData = await response.json();
+        console.log("FCM Notification sent successfully:", responseData); // Log the successful response
+        return responseData;
+
+    } catch (error) {
+        console.error("Error during FCM notification:", error);
+        throw error; // This will bubble up the error to the calling function
     }
-
-    return await response.json(); // Return response for logging or debugging
 }
 
 module.exports = { SendFCMNotification };
