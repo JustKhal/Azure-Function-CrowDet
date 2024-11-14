@@ -1,5 +1,6 @@
 {
   "version": "2.0",
+  "scriptRoot": "./src/functions",
   "logging": {
     "applicationInsights": {
       "samplingSettings": {
