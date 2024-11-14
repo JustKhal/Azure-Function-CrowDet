@@ -4,6 +4,8 @@ require('./functions/SendFCMNotification');
 require('./functions/FetchGroupMembers');
 require('./functions/CreateGroupInvitation');
 require('./functions/KickMember');
+require('./functions/FetchGroupRequests');
+require('./functions/UpdateRequestStatus');
 app.setup({
     enableHttpStream: true,
 });

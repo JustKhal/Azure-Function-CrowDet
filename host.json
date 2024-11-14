@@ -1,6 +1,5 @@
 {
   "version": "2.0",
-  "scriptRoot": "./src/functions",
   "logging": {
     "applicationInsights": {
       "samplingSettings": {
@@ -12,10 +11,5 @@
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"
-  },
-  "retry": {
-    "strategy": "fixedDelay",
-    "maxRetryCount": 0,
-    "delayInterval": "00:00:05"
   }
 }
