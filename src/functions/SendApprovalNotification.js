@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
 const { Firestore } = require('@google-cloud/firestore');
-const { SendFCMNotification } = require('./SendFCMNotification.js'); // Import the SendFCMNotification module
+const { SendFCMNotification } = require('./SendFCMNotification.js');
 
 // Load service account key from environment variable or local file
 const firebaseBase64Key = process.env.FIREBASE_BASE64_KEY;
@@ -95,6 +95,7 @@ app.http('SendApprovalNotification', {
       }
 
       const leaderFcmToken = leaderDoc.data().fcmToken;
+      context.log("Leader FCM Token:", leaderFcmToken);
 
       // Step 3: Fetch the requesting user's email from the users collection
       const userDoc = await firestore.collection("users").doc(userId).get();
@@ -121,7 +122,7 @@ app.http('SendApprovalNotification', {
 
       // Step 5: Send FCM notification to the leader with the user's email
       const installRequestId = approvalRequestSnapshot.docs[0].id;
-      context.log("Sending notification via FCM...");
+      context.log("Sending notification via FCM to Leader's Token...");
       const response = await SendFCMNotification(
         leaderFcmToken,
         {
@@ -129,8 +130,8 @@ app.http('SendApprovalNotification', {
           body: `User ${userEmail} has requested to install ${apkFileName}.`
         },
         {
-          navigateTo: "AdminApprovalScreen", // Explicitly setting navigateTo
-          installRequestId: installRequestId.toString() // Ensure installRequestId is sent as string
+          navigateTo: "AdminApprovalScreen",
+          installRequestId: installRequestId.toString()
         }
       );
       context.log("Notification sent successfully:", response, "installRequestID:", installRequestId);
