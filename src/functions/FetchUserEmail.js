@@ -30,26 +30,33 @@ const firestore = new Firestore({
     }
 });
 
-app.http('UpdateRequestStatus', {
-  methods: ['POST'],
-  authLevel: 'function',
-  handler: async (request, context) => {
-    const { requestId, newStatus, userId } = await request.json();
-    context.log(`Updating request status for ${requestId} by ${userId} to ${newStatus}`);
+app.http('FetchUserEmail', {
+    methods: ['POST'],
+    authLevel: 'function',
+    handler: async (request, context) => {
+        try {
+            const { userId } = await request.json();
+            context.log("Received userId:", userId);
 
-    try {
-      const userDoc = await firestore.collection('users').doc(userId).get();
-      const userData = userDoc.data();
+            if (!userId) {
+                return { status: 400, body: JSON.stringify({ message: "Missing userId" }) };
+            }
 
-      if (!userData || userData.role !== 'leader') {
-        return { status: 403, body: JSON.stringify({ error: 'User is not authorized as a leader.' }) };
-      }
+            // Fetch the user document from Firestore
+            const userDoc = await firestore.collection('users').doc(userId).get();
+            if (!userDoc.exists) {
+                return { status: 404, body: JSON.stringify({ message: `User with userId ${userId} not found.` }) };
+            }
 
-      await firestore.collection('installRequests').doc(requestId).update({ status: newStatus });
-      return { status: 200, body: JSON.stringify({ message: 'Request status updated successfully.' }) }; // Wrap the response in a JSON object
-    } catch (error) {
-      context.log('Error updating request status:', error);
-      return { status: 500, body: JSON.stringify({ error: 'Error updating request status.' }) };
+            const userEmail = userDoc.data().email;
+            if (!userEmail) {
+                return { status: 404, body: JSON.stringify({ message: `Email not found for userId ${userId}.` }) };
+            }
+
+            return { status: 200, body: JSON.stringify({ email: userEmail }) };
+        } catch (error) {
+            context.log("Error in FetchUserEmail function:", error);
+            return { status: 500, body: JSON.stringify({ message: `Error: ${error.message}` }) };
+        }
     }
-  }
 });

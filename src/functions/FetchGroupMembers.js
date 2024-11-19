@@ -23,53 +23,69 @@ try {
 
 // Initialize Firebase Firestore with decoded credentials
 const firestore = new Firestore({
-    projectId: serviceAccount.project_id,
-    credentials: {
-      client_email: serviceAccount.client_email,
-      private_key: serviceAccount.private_key
+  projectId: serviceAccount.project_id,
+  credentials: {
+    client_email: serviceAccount.client_email,
+    private_key: serviceAccount.private_key,
+  },
+});
+
+app.http('FetchGroupMembers', {
+  methods: ['POST'],
+  authLevel: 'function',
+  handler: async (request, context) => {
+    try {
+      const { groupId } = await request.json();
+      context.log("Received groupId:", groupId);
+
+      if (!groupId) {
+        context.log("Error: Missing groupId");
+        return { status: 400, body: JSON.stringify({ message: 'Missing groupId' }) };
+      }
+
+      const groupDoc = await firestore.collection('groups').doc(groupId).get();
+      if (!groupDoc.exists) {
+        context.log("Group not found for groupId:", groupId);
+        return { status: 404, body: JSON.stringify({ message: 'Group not found' }) };
+      }
+
+      const memberIds = groupDoc.data().memberIds || [];
+      context.log("Fetched member IDs:", memberIds);
+
+      if (memberIds.length === 0) {
+        context.log("Returning empty members array");
+        return { status: 200, body: JSON.stringify({ members: [] }) };
+      }
+
+      const memberPromises = memberIds.map(async (id) => {
+        const userDoc = await firestore.collection('users').doc(id).get();
+        if (!userDoc.exists) return null;
+
+        const userData = { id: userDoc.id, ...userDoc.data() };
+
+        // Fetch installation requests for this user
+        const requestsSnapshot = await firestore
+          .collection('installRequests')
+          .where('userId', '==', id)
+          .where('status', '==', 'pending')
+          .get();
+
+        const installRequests = requestsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        return { ...userData, installRequests };
+      });
+
+      const members = (await Promise.all(memberPromises)).filter(Boolean);
+      context.log("Returning members with installRequests:", JSON.stringify({ members }));
+      context.log("Final response members:", JSON.stringify(members, null, 2));
+
+      return { status: 200, body: JSON.stringify({ members }) };
+    } catch (error) {
+      context.log('Error fetching members:', error);
+      return { status: 500, body: JSON.stringify({ message: `Error: ${error.message}` }) };
     }
-  });
-
-  app.http('FetchGroupMembers', {
-    methods: ['POST'],
-    authLevel: 'function',
-    handler: async (request, context) => {
-        try {
-            const { groupId } = await request.json();
-            context.log("Received groupId:", groupId);
-
-            if (!groupId) {
-                context.log("Error: Missing groupId");
-                return { status: 400, body: JSON.stringify({ message: 'Missing groupId' }) };
-            }
-
-            const groupDoc = await firestore.collection('groups').doc(groupId).get();
-            if (!groupDoc.exists) {
-                context.log("Group not found for groupId:", groupId);
-                return { status: 404, body: JSON.stringify({ message: 'Group not found' }) };
-            }
-
-            const memberIds = groupDoc.data().memberIds || [];
-            context.log("Fetched member IDs:", memberIds);
-
-            if (memberIds.length === 0) {
-                context.log("Returning empty members array");
-                return { status: 200, body: JSON.stringify({ members: [] }) }; // Wrap in JSON object
-            }
-
-            const memberPromises = memberIds.map(id => firestore.collection('users').doc(id).get());
-            const memberDocs = await Promise.all(memberPromises);
-
-            const members = memberDocs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            context.log("Returning members:", JSON.stringify({ members })); // Log the members JSON
-
-            return { status: 200, body: JSON.stringify({ members }) };
-        } catch (error) {
-            context.log('Error fetching members:', error);
-            return { status: 500, body: JSON.stringify({ message: `Error: ${error.message}` }) };
-        }
-    }
+  },
 });
