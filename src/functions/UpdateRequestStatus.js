@@ -42,14 +42,14 @@ app.http('UpdateRequestStatus', {
       const userData = userDoc.data();
 
       if (!userData || userData.role !== 'leader') {
-        return { status: 403, body: 'User is not authorized as a leader.' };
+        return { status: 403, body: JSON.stringify({ error: 'User is not authorized as a leader.' }) };
       }
 
       await firestore.collection('installRequests').doc(requestId).update({ status: newStatus });
-      return { status: 200, body: 'Request status updated successfully' };
+      return { status: 200, body: JSON.stringify({ message: 'Request status updated successfully.' }) }; // Wrap the response in a JSON object
     } catch (error) {
       context.log('Error updating request status:', error);
-      return { status: 500, body: 'Error updating request status' };
+      return { status: 500, body: JSON.stringify({ error: 'Error updating request status.' }) };
     }
   }
 });
