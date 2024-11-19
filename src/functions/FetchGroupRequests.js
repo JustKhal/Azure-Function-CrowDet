@@ -34,15 +34,35 @@ app.http('FetchGroupRequests', {
   methods: ['POST'],
   authLevel: 'function',
   handler: async (request, context) => {
-    const { userId } = await request.json();
-    context.log('Fetching group requests for userId:', userId);
+    context.log('Received request to FetchGroupRequests');
+
+    let userId;
+    try {
+      const requestBody = await request.json();
+      userId = requestBody.userId;
+      context.log('User ID from request:', userId);
+      context.log('Request body received:', JSON.stringify(requestBody)); // Log the request payload
+    } catch (error) {
+      context.log('Failed to parse request body:', error);
+      return { status: 400, body: JSON.stringify({ error: 'Invalid request body' }) };
+    }
+
+    if (!userId) {
+      context.log('User ID is missing in the request');
+      return { status: 400, body: JSON.stringify({ error: 'User ID is required' }) };
+    }
 
     try {
       const userDoc = await firestore.collection('users').doc(userId).get();
-      const userData = userDoc.data();
+      if (!userDoc.exists) {
+        context.log('User not found:', userId);
+        return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
+      }
 
+      const userData = userDoc.data();
       if (!userData || userData.role !== 'leader') {
-        return { status: 403, body: 'User is not authorized as a leader.' };
+        context.log('User is not authorized as a leader:', userId);
+        return { status: 403, body: JSON.stringify({ error: 'User is not authorized as a leader.' }) };
       }
 
       const groups = userData.groups || [];
@@ -50,29 +70,42 @@ app.http('FetchGroupRequests', {
 
       for (const groupId of groups) {
         const groupDoc = await firestore.collection('groups').doc(groupId).get();
-        const groupName = groupDoc.data().name || 'Unknown Group';
+        if (!groupDoc.exists) {
+            context.log('Group not found for groupId:', groupId);
+            continue; // Skip to the next group if this one is missing
+        }
+
+        const groupName = groupDoc.data().groupName || 'Unknown Group';
+        context.log(`Processing group: ${groupName} (ID: ${groupId})`);
 
         const requestSnapshot = await firestore.collection('installRequests')
-          .where('status', '==', 'pending')
-          .where('groupId', '==', groupId)
-          .get();
+            .where('status', '==', 'pending')
+            .where('groupId', '==', groupId)
+            .get();
 
-        requestSnapshot.forEach(doc => {
-          const requestData = doc.data();
-          requests.push({
-            id: doc.id,
-            groupId,
-            groupName,
-            userEmail: requestData.userEmail,
-            apkFileName: requestData.apkFileName,
-          });
-        });
-      }
+        for (const doc of requestSnapshot.docs) {
+            const requestData = doc.data();
 
-      return { status: 200, body: requests };
-    } catch (error) {
-      context.log('Error fetching group requests:', error);
-      return { status: 500, body: 'Error fetching group requests' };
+            // Fetch the user email from Firestore
+            const requestUserDoc = await firestore.collection('users').doc(requestData.userId).get();
+            const userEmail = requestUserDoc.exists ? requestUserDoc.data().email : 'Unknown User';
+
+            requests.push({
+                id: doc.id,
+                groupId,
+                groupName,
+                userEmail, // Include fetched email
+                apkFileName: requestData.apkFileName,
+            });
+            context.log(`Added request for group: ${groupName}, user: ${userEmail}`);
+        }
     }
-  }
+
+    context.log(`Returning ${requests.length} requests`);
+    return { status: 200, body: JSON.stringify({ body: requests }) };
+} catch (error) {
+    context.log('Error fetching group requests:', error);
+    return { status: 500, body: JSON.stringify({ error: 'Error fetching group requests' }) };
+}
+}
 });
