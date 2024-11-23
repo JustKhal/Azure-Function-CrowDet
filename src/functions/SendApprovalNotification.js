@@ -65,12 +65,12 @@ app.http('SendApprovalNotification', {
       return { status: 400, body: "Invalid JSON format in request body." };
     }
 
-    const { userId, apkFileName, groupId, status } = requestBody;
+    const { userId, apkFileName, apkHash, groupId, status } = requestBody;
 
     // Check for missing parameters
-    if (!userId || !apkFileName || !groupId || !status) {
-      context.log("Missing required parameters:", { userId, apkFileName, groupId, status });
-      return { status: 400, body: "Missing required parameters: userId, apkFileName, groupId, or status." };
+    if (!userId || !apkHash || !groupId || !status) {
+      context.log("Missing required parameters:", { userId, apkHash, groupId, status });
+      return { status: 400, body: "Missing required parameters: userId, apkHash, groupId, or status." };
     }
 
     try {
@@ -90,12 +90,30 @@ app.http('SendApprovalNotification', {
       // Step 2: Fetch the leader's FCM token from the users collection
       const leaderDoc = await firestore.collection("users").doc(leaderId).get();
       if (!leaderDoc.exists || !leaderDoc.data().fcmToken) {
-        context.log(`Leader with ID ${leaderId} does not have a valid FCM token.`);
-        return { status: 404, body: "Leader FCM token not found." };
+          context.log(`Leader with ID ${leaderId} does not have a valid FCM token.`);
+          return { status: 404, body: "Leader FCM token not found." };
       }
 
       const leaderFcmToken = leaderDoc.data().fcmToken;
       context.log("Leader FCM Token:", leaderFcmToken);
+
+      // Validate token
+      try {
+          const validateResponse = await SendFCMNotification(
+              leaderFcmToken,
+              { title: "Validation Check", body: "Validating FCM Token." },
+              {}
+          );
+          context.log("FCM Token validation passed:", validateResponse);
+      } catch (error) {
+          if (error.message.includes("FCM token not found or invalid")) {
+              context.log(`FCM token for leader ${leaderId} is invalid. Consider refreshing the token.`);
+              // Optionally trigger an event or notify admin to update the token
+              return { status: 400, body: "Leader's FCM token is invalid or expired." };
+          }
+          throw error; // Bubble up other errors
+      }
+
 
       // Step 3: Fetch the requesting user's email from the users collection
       const userDoc = await firestore.collection("users").doc(userId).get();
@@ -104,12 +122,12 @@ app.http('SendApprovalNotification', {
         return { status: 404, body: "User not found." };
       }
 
-      const userEmail = userDoc.data().email || userId; // Use email if available, fallback to userId
+      const userEmail = userDoc.data().email || "Unknown User";
 
       // Step 4: Check for pending approval requests in installRequests collection
       context.log("Checking Firestore for pending approval requests...");
       const approvalRequestSnapshot = await firestore.collection("installRequests")
-        .where("apkFileName", "==", apkFileName)
+        .where("apkHash", "==", apkHash) // Use apkHash instead of apkFileName
         .where("groupId", "==", groupId)
         .where("userId", "==", userId)
         .where("status", "==", status)
@@ -121,20 +139,26 @@ app.http('SendApprovalNotification', {
       }
 
       // Step 5: Send FCM notification to the leader with the user's email
-      const installRequestId = approvalRequestSnapshot.docs[0].id;
+      const requestDoc = approvalRequestSnapshot.docs[0];
+      const apkFileNameFromDoc = requestDoc.data().apkFileName || "Unknown APK";
+
       context.log("Sending notification via FCM to Leader's Token...");
       const response = await SendFCMNotification(
         leaderFcmToken,
         {
-          title: "Approval Request",
-          body: `User ${userEmail} has requested to install ${apkFileName}.`
+            title: `New Installation Request from ${userEmail}`, // Use user email
+            body: `Request to install ${apkFileNameFromDoc}.`, // Use apkFileName
         },
         {
-          navigateTo: "AdminApprovalScreen",
-          installRequestId: installRequestId.toString()
+            navigateTo: "AdminApprovalScreen",
+            userId: userId,
+            userName: userEmail,
+            apkFileName: apkFileNameFromDoc, // Pass the APK name in the payload
+
         }
-      );
-      context.log("Notification sent successfully:", response, "installRequestID:", installRequestId);
+    );
+
+      context.log("Notification sent successfully:", response);
 
       return { status: 200, body: "Notification sent successfully." };
     } catch (error) {

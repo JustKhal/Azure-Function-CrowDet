@@ -12,6 +12,7 @@ async function getAccessToken() {
 
     const client = await auth.getClient();
     const token = await client.getAccessToken();
+    console.log("Access Token retrieved successfully:", token); // Log Access Token
     return token.token;
 }
 
@@ -37,15 +38,17 @@ async function SendFCMNotification(registrationToken, notification, dataPayload)
         }
     };
 
-    // Get the access token
-    const accessToken = await getAccessToken();
-    console.log("FCM URL:", fcmUrl); // Log the FCM URL
-    console.log("Registration Token:", registrationToken); // Log the registration token
-    console.log("Access Token:", accessToken); // Log the access token
-    console.log("Payload:", JSON.stringify(payload)); // Log the full payload
-
-    // Send the notification request to FCM using the dynamically imported `fetch`
     try {
+        // Get the access token
+        const accessToken = await getAccessToken();
+        console.log("Access Token retrieved successfully.");
+
+        // Log details for debugging purposes
+        console.log("FCM URL:", fcmUrl);
+        console.log("Registration Token:", registrationToken);
+        console.log("Payload:", JSON.stringify(payload));
+
+        // Send the notification request to FCM using the dynamically imported `fetch`
         const response = await fetchWithDynamicImport(fcmUrl, {
             method: 'POST',
             headers: {
@@ -58,15 +61,32 @@ async function SendFCMNotification(registrationToken, notification, dataPayload)
         if (!response.ok) {
             const errorData = await response.json();
             console.error("Failed to send FCM notification:", errorData);
-            throw new Error(`Failed to send FCM notification: ${errorData.error.message}`);
+
+            if (errorData.error) {
+                if (errorData.error.code === 404) {
+                    throw new Error("FCM token not found or invalid.");
+                } else if (errorData.error.message.includes("registration token")) {
+                    throw new Error("FCM registration token is invalid or expired.");
+                } else {
+                    throw new Error(`FCM Error: ${errorData.error.message}`);
+                }
+            } else {
+                throw new Error("Unexpected FCM error occurred.");
+            }
         }
 
         const responseData = await response.json();
-        console.log("FCM Notification sent successfully:", responseData); // Log the successful response
+        console.log("FCM Notification sent successfully:", responseData);
         return responseData;
 
     } catch (error) {
         console.error("Error during FCM notification:", error);
+
+        // Add logic to re-trigger token update or notify the user if necessary
+        if (error.message.includes("FCM token")) {
+            console.error("The FCM token seems to be invalid or expired. Consider updating the token.");
+        }
+
         throw error; // This will bubble up the error to the calling function
     }
 }

@@ -57,13 +57,36 @@ app.http('KickMember', {
             }
 
             const userId = userSnapshot.docs[0].id;
+            const userRef = firestore.collection('users').doc(userId);
+
+            // Start a batch for atomic updates
+            const batch = firestore.batch();
 
             // Remove the user from the group members
-            await firestore.collection('groups').doc(groupId).update({
+            const groupRef = firestore.collection('groups').doc(groupId);
+            batch.update(groupRef, {
                 memberIds: Firestore.FieldValue.arrayRemove(userId)
             });
 
-            return { status: 200, body: JSON.stringify({ status: "success", message: "Member removed from group successfully." }) };
+            // Remove the groupId from the user's document
+            batch.update(userRef, {
+                groups: Firestore.FieldValue.arrayRemove(groupId)
+            });
+
+            // Delete all installation requests associated with the user for this group
+            const installRequestsSnapshot = await firestore.collection('installRequests')
+                .where('userId', '==', userId)
+                .where('groupId', '==', groupId)
+                .get();
+
+            installRequestsSnapshot.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+
+            // Commit the batch operation
+            await batch.commit();
+
+            return { status: 200, body: JSON.stringify({ status: "success", message: "Member, group ID, and associated installation requests removed successfully." }) };
         } catch (error) {
             context.log("Error in KickMember function:", error);
             return { status: 500, body: JSON.stringify({ status: "error", message: `Error: ${error.message}` }) };

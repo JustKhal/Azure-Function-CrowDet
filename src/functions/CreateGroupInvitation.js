@@ -48,6 +48,7 @@ app.http('CreateGroupInvitation', {
                 };
             }
 
+            // Check if the email connected to a user
             const userSnapshot = await firestore.collection('users')
                 .where('email', '==', memberEmail)
                 .get();
