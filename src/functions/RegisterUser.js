@@ -34,45 +34,48 @@ app.http('RegisterUser', {
     methods: ['POST'],
     authLevel: 'function',
     handler: async (request, context) => {
+        context.log("RegisterUser function triggered.");
         try {
             const { email, password, role } = await request.json();
+            context.log("Received request body:", { email, role, password: password ? "******" : "null" });
 
-            // Basic validation
             if (!email || !password || !role) {
-                return { status: 400, body: { success: false, message: "Missing required fields" } };
+                context.log("Validation failed: Missing required fields.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Missing required fields" }) };
             }
 
             if (!/^[\w.%+-]+@gmail\.com$/.test(email)) {
-                return { status: 400, body: { success: false, message: "Only gmail.com addresses are allowed" } };
+                context.log("Validation failed: Invalid email format.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Only gmail.com addresses are allowed" }) };
             }
 
             if (password.length < 8 || !/(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
-                return { status: 400, body: { success: false, message: "Password must be at least 8 characters long and contain both letters and numbers" } };
+                context.log("Validation failed: Password does not meet criteria.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Password must be at least 8 characters long and contain both letters and numbers" }) };
             }
 
             if (!['leader', 'member'].includes(role)) {
-                return { status: 400, body: { success: false, message: "Invalid role provided" } };
+                context.log("Validation failed: Invalid role provided.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Invalid role provided" }) };
             }
 
             // Check if email is already registered
             const usersRef = firestore.collection('users');
             const snapshot = await usersRef.where('email', '==', email).get();
             if (!snapshot.empty) {
-                return { status: 400, body: { success: false, message: "Email is already registered" } };
+                context.log("Validation failed: Email is already registered.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Email is already registered" }) };
             }
 
-            // Proceed with user creation
-            const userDoc = {
-                email: email,
-                role: role
-            };
-            const newUserRef = usersRef.doc(); // Generate a new document ID
-            await newUserRef.set(userDoc);
+            context.log("Creating new user in Firestore.");
+            const userDoc = { email: email, role: role };
+            await usersRef.doc().set(userDoc);
 
-            return { status: 200, body: { success: true, message: "User registered successfully" } };
+            context.log("User registered successfully.");
+            return { status: 200, body: JSON.stringify({ success: true, message: "User registered successfully" }) };
         } catch (error) {
             context.log("Error in RegisterUser function:", error);
-            return { status: 500, body: { success: false, message: "Internal server error" } };
+            return { status: 500, body: JSON.stringify({ success: false, message: "Internal server error" }) };
         }
     }
 });

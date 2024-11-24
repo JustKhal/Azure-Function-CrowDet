@@ -34,33 +34,42 @@ app.http('LoginUser', {
     methods: ['POST'],
     authLevel: 'function',
     handler: async (request, context) => {
+        context.log("LoginUser function triggered.");
         try {
             const { email, password } = await request.json();
+            context.log("Received request body:", { email, password: password ? "******" : "null" });
 
             if (!email || !password) {
-                return { status: 400, body: { success: false, message: "Missing email or password" } };
+                context.log("Validation failed: Missing email or password.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Missing email or password" }) };
             }
 
             // Validate email format
-            const emailRegex = /^[\w.%+-]+@gmail\.com$/.test(email);
+            const emailRegex = /^[\w.%+-]+@gmail\.com$/;
             if (!emailRegex.test(email)) {
-                return { status: 400, body: { success: false, message: "Invalid email format" } };
+                context.log("Validation failed: Invalid email format.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Invalid email format" }) };
             }
 
             if (password.length < 8 || !/(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
-                return { status: 400, body: { success: false, message: "Password must be at least 8 characters long and contain both letters and numbers" } };
+                context.log("Validation failed: Password does not meet criteria.");
+                return { status: 400, body: JSON.stringify({ success: false, message: "Password must be at least 8 characters long and contain both letters and numbers" }) };
             }
 
             // Check if user exists in Firestore
             const userSnapshot = await firestore.collection('users').where('email', '==', email).get();
             if (userSnapshot.empty) {
-                return { status: 404, body: { success: false, message: "User not found" } };
+                context.log("Validation failed: User not found in Firestore.");
+                return { status: 404, body: JSON.stringify({ success: false, message: "User not found" }) };
             }
 
-            return { status: 200, body: { success: true, message: "Login successful" } };
+            context.log("Validation passed: User found in Firestore.");
+            const response = { success: true, message: "Email and Password already followed the policy" };
+            context.log("Response:", response);
+            return { status: 200, body: JSON.stringify(response) };
         } catch (error) {
             context.log("Error in LoginUser function:", error);
-            return { status: 500, body: { success: false, message: "Internal server error" } };
+            return { status: 500, body: JSON.stringify({ success: false, message: "Internal server error" }) };
         }
     }
 });
