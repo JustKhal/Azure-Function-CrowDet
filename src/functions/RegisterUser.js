@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { Firestore } = require('@google-cloud/firestore');
+const admin = require('firebase-admin');
 
 // Load service account key from environment variable or local file
 const firebaseBase64Key = process.env.FIREBASE_BASE64_KEY;
@@ -21,7 +22,13 @@ try {
     throw new Error("Failed to decode and parse FIREBASE_BASE64_KEY. Ensure it's correctly base64-encoded.");
 }
 
-// Initialize Firebase Firestore with decoded credentials
+// Initialize Firebase Admin and Firestore
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+}
+
 const firestore = new Firestore({
     projectId: serviceAccount.project_id,
     credentials: {
@@ -67,14 +74,30 @@ app.http('RegisterUser', {
                 return { status: 400, body: JSON.stringify({ success: false, message: "Email is already registered" }) };
             }
 
-            context.log("Creating new user in Firestore.");
-            const userDoc = { email: email, role: role };
-            await usersRef.doc().set(userDoc);
+            // Create user in Firebase Authentication
+            context.log("Creating user in Firebase Authentication.");
+            const userRecord = await admin.auth().createUser({
+                email: email,
+                password: password,
+                emailVerified: false // Require email verification
+            });
 
-            context.log("User registered successfully.");
+            context.log("User created in Firebase Authentication:", userRecord.uid);
+
+            // Save user role in Firestore
+            context.log("Saving user in Firestore.");
+            await usersRef.doc(userRecord.uid).set({
+                email: email,
+                role: role
+            });
+
+            context.log("User registered successfully in Firestore.");
             return { status: 200, body: JSON.stringify({ success: true, message: "User registered successfully" }) };
         } catch (error) {
             context.log("Error in RegisterUser function:", error);
+            if (error.code === 'auth/email-already-exists') {
+                return { status: 400, body: JSON.stringify({ success: false, message: "Email is already registered in Authentication." }) };
+            }
             return { status: 500, body: JSON.stringify({ success: false, message: "Internal server error" }) };
         }
     }
