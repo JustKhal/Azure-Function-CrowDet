@@ -1,6 +1,6 @@
-const { app } = require('@azure/functions');
-const { Firestore } = require('@google-cloud/firestore');
-const { SendFCMNotification } = require('./SendFCMNotification.js');
+const { app } = require("@azure/functions");
+const { Firestore } = require("@google-cloud/firestore");
+const { SendFCMNotification } = require("./SendFCMNotification.js");
 
 // Load service account key from environment variable or local file
 const firebaseBase64Key = process.env.FIREBASE_BASE64_KEY;
@@ -11,7 +11,7 @@ try {
     throw new Error("FIREBASE_BASE64_KEY environment variable is missing.");
   }
 
-  const decodedKey = Buffer.from(firebaseBase64Key, 'base64').toString('utf-8');
+  const decodedKey = Buffer.from(firebaseBase64Key, "base64").toString("utf-8");
   serviceAccount = JSON.parse(decodedKey);
 
   if (!serviceAccount || !serviceAccount.client_email || !serviceAccount.private_key) {
@@ -27,18 +27,18 @@ const firestore = new Firestore({
   projectId: serviceAccount.project_id,
   credentials: {
     client_email: serviceAccount.client_email,
-    private_key: serviceAccount.private_key
-  }
+    private_key: serviceAccount.private_key,
+  },
 });
 
 // Helper function to parse request body if needed
 async function parseRequestBody(request) {
-  if (typeof request.body === 'string') {
+  if (typeof request.body === "string") {
     return JSON.parse(request.body);
-  } else if (request.body && typeof request.body.getReader === 'function') {
+  } else if (request.body && typeof request.body.getReader === "function") {
     const reader = request.body.getReader();
     const decoder = new TextDecoder();
-    let result = '';
+    let result = "";
     let done, value;
 
     while ({ done, value } = await reader.read(), !done) {
@@ -51,9 +51,9 @@ async function parseRequestBody(request) {
 }
 
 // Azure Function handler
-app.http('SendApprovalNotification', {
-  methods: ['POST'],
-  authLevel: 'function',
+app.http("SendApprovalNotification", {
+  methods: ["POST"],
+  authLevel: "function",
   handler: async (request, context) => {
     let requestBody;
 
@@ -74,7 +74,9 @@ app.http('SendApprovalNotification', {
     }
 
     try {
-      // Step 1: Fetch leaderId and FCM token from the group document using groupId
+      context.log("Project ID:", serviceAccount.project_id);
+
+      // Fetch leaderId and FCM token from the group document using groupId
       const groupDoc = await firestore.collection("groups").doc(groupId).get();
       if (!groupDoc.exists) {
         context.log(`Group with ID ${groupId} not found.`);
@@ -87,35 +89,17 @@ app.http('SendApprovalNotification', {
         return { status: 404, body: "Leader not found for group." };
       }
 
-      // Step 2: Fetch the leader's FCM token from the users collection
+      // Fetch the leader's FCM token from the users collection
       const leaderDoc = await firestore.collection("users").doc(leaderId).get();
       if (!leaderDoc.exists || !leaderDoc.data().fcmToken) {
-          context.log(`Leader with ID ${leaderId} does not have a valid FCM token.`);
-          return { status: 404, body: "Leader FCM token not found." };
+        context.log(`Leader with ID ${leaderId} does not have a valid FCM token.`);
+        return { status: 404, body: "Leader FCM token not found." };
       }
 
       const leaderFcmToken = leaderDoc.data().fcmToken;
       context.log("Leader FCM Token:", leaderFcmToken);
 
-      // Validate token
-      try {
-          const validateResponse = await SendFCMNotification(
-              leaderFcmToken,
-              { title: "Validation Check", body: "Validating FCM Token." },
-              {}
-          );
-          context.log("FCM Token validation passed:", validateResponse);
-      } catch (error) {
-          if (error.message.includes("FCM token not found or invalid")) {
-              context.log(`FCM token for leader ${leaderId} is invalid. Consider refreshing the token.`);
-              // Optionally trigger an event or notify admin to update the token
-              return { status: 400, body: "Leader's FCM token is invalid or expired." };
-          }
-          throw error; // Bubble up other errors
-      }
-
-
-      // Step 3: Fetch the requesting user's email from the users collection
+      // Fetch the requesting user's email from the users collection
       const userDoc = await firestore.collection("users").doc(userId).get();
       if (!userDoc.exists) {
         context.log(`User with ID ${userId} not found.`);
@@ -124,10 +108,11 @@ app.http('SendApprovalNotification', {
 
       const userEmail = userDoc.data().email || "Unknown User";
 
-      // Step 4: Check for pending approval requests in installRequests collection
+      // Check for pending approval requests in installRequests collection
       context.log("Checking Firestore for pending approval requests...");
-      const approvalRequestSnapshot = await firestore.collection("installRequests")
-        .where("apkHash", "==", apkHash) // Use apkHash instead of apkFileName
+      const approvalRequestSnapshot = await firestore
+        .collection("installRequests")
+        .where("apkHash", "==", apkHash)
         .where("groupId", "==", groupId)
         .where("userId", "==", userId)
         .where("status", "==", status)
@@ -138,7 +123,7 @@ app.http('SendApprovalNotification', {
         return { status: 404, body: "No pending approval requests found." };
       }
 
-      // Step 5: Send FCM notification to the leader with the user's email
+      // Send FCM notification to the leader with the user's email
       const requestDoc = approvalRequestSnapshot.docs[0];
       const apkFileNameFromDoc = requestDoc.data().apkFileName || "Unknown APK";
 
@@ -146,17 +131,16 @@ app.http('SendApprovalNotification', {
       const response = await SendFCMNotification(
         leaderFcmToken,
         {
-            title: `New Installation Request from ${userEmail}`, // Use user email
-            body: `Request to install ${apkFileNameFromDoc}.`, // Use apkFileName
+          title: `New Installation Request from ${userEmail}`, // Use user email
+          body: `Request to install ${apkFileNameFromDoc}.`, // Use apkFileName
         },
         {
-            navigateTo: "AdminApprovalScreen",
-            userId: userId,
-            userName: userEmail,
-            apkFileName: apkFileNameFromDoc, // Pass the APK name in the payload
-
+          navigateTo: "AdminApprovalScreen",
+          userId: userId,
+          userName: userEmail,
+          apkFileName: apkFileNameFromDoc, // Pass the APK name in the payload
         }
-    );
+      );
 
       context.log("Notification sent successfully:", response);
 
@@ -165,5 +149,5 @@ app.http('SendApprovalNotification', {
       context.log("Error during notification process:", error);
       return { status: 500, body: "Error sending notification: " + error.message };
     }
-  }
+  },
 });
